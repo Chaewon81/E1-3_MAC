@@ -1,6 +1,7 @@
 """Timing helpers for the MAC function only."""
 
 from time import perf_counter
+from statistics import pstdev
 
 from .mac import mac
 from .mac import mac_flat
@@ -19,16 +20,21 @@ def benchmark_size(size, repeats=10, pattern=None, filter_=None):
     if filter_ is None:
         _, filter_ = generate_patterns(size)
 
-    elapsed = 0.0
+    samples_ms = []
     for _ in range(repeats):
         start = perf_counter()
         mac(pattern, filter_)
-        elapsed += perf_counter() - start
+        samples_ms.append((perf_counter() - start) * 1000)
+
+    average_ms = sum(samples_ms) / repeats
 
     return {
         "size": size,
         "repeats": repeats,
-        "average_ms": elapsed * 1000 / repeats,
+        "average_ms": average_ms,
+        "min_ms": min(samples_ms),
+        "max_ms": max(samples_ms),
+        "stdev_ms": pstdev(samples_ms),
         "operations": size * size,
     }
 
@@ -89,11 +95,15 @@ def run_optimization_comparison(output_fn=print):
 
 
 def print_benchmark_table(rows, output_fn=print):
-    """Print size, average time, and N-squared MAC count as a table."""
+    """Print average and spread, plus size and N-squared MAC count."""
     output_fn("\n성능 분석 (MAC 함수 호출 시간만 측정)")
-    output_fn(f"{'크기(N×N)':<14}{'평균 시간(ms)':>18}{'연산 횟수(N²)':>18}")
+    output_fn(
+        f"{'크기':<8}{'평균(ms)':>12}{'최소(ms)':>12}{'최대(ms)':>12}"
+        f"{'표준편차':>12}{'연산수(N²)':>14}"
+    )
     for row in rows:
         output_fn(
-            f"{row['size']}×{row['size']:<12}"
-            f"{row['average_ms']:>18.6f}{row['operations']:>18}"
+            f"{row['size']}×{row['size']:<6}{row['average_ms']:>12.6f}"
+            f"{row['min_ms']:>12.6f}{row['max_ms']:>12.6f}"
+            f"{row['stdev_ms']:>12.6f}{row['operations']:>14}"
         )

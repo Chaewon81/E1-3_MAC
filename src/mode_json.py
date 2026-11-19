@@ -3,8 +3,9 @@
 import json
 from pathlib import Path
 import re
+from collections import Counter
 
-from .judge import decide, normalize_label
+from .judge import EPSILON, decide, normalize_label
 from .mac import mac
 from .matrix import is_valid_matrix
 from .perf import benchmark_size, print_benchmark_table
@@ -38,11 +39,20 @@ def analyze_json_file(path="data.json", output_fn=print):
 
             key_match = re.fullmatch(r"size_(\d+)_\d+", case_name)
             if not key_match:
-                raise ValueError("케이스 키는 size_{N}_{idx} 형식이어야 합니다.")
+                raise ValueError(
+                    f"케이스 키 {case_name!r}의 형식이 잘못됐습니다. "
+                    "size_{N}_{idx} 형식이어야 합니다."
+                )
             size = int(key_match.group(1))
             if len(pattern) != size or len(pattern[0]) != size:
                 raise ValueError(f"키는 {size}×{size}를 가리키지만 패턴 크기가 다릅니다.")
-            filter_set = filters[f"size_{size}"]
+            filter_key = f"size_{size}"
+            if filter_key not in filters:
+                raise ValueError(
+                    f"필터 묶음 '{filter_key}'을 찾을 수 없습니다. "
+                    "filters에 해당 크기의 Cross와 X 필터를 추가하세요."
+                )
+            filter_set = filters[filter_key]
             if not isinstance(filter_set, dict):
                 raise ValueError(f"size_{size} 필터 항목은 객체여야 합니다.")
             normalized_filters = {}
@@ -72,8 +82,17 @@ def analyze_json_file(path="data.json", output_fn=print):
                         else "예상 라벨과 판정 결과가 다릅니다."
                     )
                 ),
+                "failure_type": (
+                    None
+                    if passed
+                    else "동점/수치 비교"
+                    if predicted == "UNDECIDED"
+                    else "예측/expected 불일치"
+                ),
             }
         except (KeyError, TypeError, ValueError) as error:
+            reason = str(error)
+            failure_type = "라벨/스키마" if "라벨" in reason or "필터 키" in reason else "데이터/스키마"
             result = {
                 "case": case_name,
                 "expected": expected,
@@ -81,7 +100,8 @@ def analyze_json_file(path="data.json", output_fn=print):
                 "cross_score": None,
                 "x_score": None,
                 "passed": False,
-                "reason": str(error),
+                "reason": reason,
+                "failure_type": failure_type,
             }
 
         results.append(result)
@@ -95,12 +115,19 @@ def analyze_json_file(path="data.json", output_fn=print):
             )
 
     failures = [result for result in results if not result["passed"]]
+    undecided_count = sum(result["predicted"] == "UNDECIDED" for result in results)
+    failure_counts = Counter(result["failure_type"] for result in failures)
     benchmarks = [benchmark_size(size) for size in (3, 5, 13, 25)]
     print_benchmark_table(benchmarks, output_fn)
 
     output_fn("\n결과 요약")
+    output_fn(f"동점 기준 epsilon: {EPSILON:g}")
     output_fn(f"전체: {len(results)} | 통과: {len(results) - len(failures)} | 실패: {len(failures)}")
+    output_fn(f"판정 불가(UNDECIDED): {undecided_count}")
     if failures:
+        output_fn("실패 원인별 집계:")
+        for failure_type, count in sorted(failure_counts.items()):
+            output_fn(f"- {failure_type}: {count}건")
         output_fn("실패 케이스:")
         for result in failures:
             output_fn(f"- {result['case']}: {result['reason']}")

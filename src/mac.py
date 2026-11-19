@@ -4,7 +4,11 @@ from .matrix import same_shape
 
 
 def mac(pattern, filter_):
-    """Multiply matching cells and return their sum."""
+    """Multiply matching cells, add each product to a running score, and return it.
+
+    The two loops visit every row and column once. A shape check runs first,
+    then each same-position pair is multiplied and accumulated into ``score``.
+    """
     if not same_shape(pattern, filter_):
         raise ValueError("두 배열은 비어 있지 않은 같은 크기의 직사각형이어야 합니다.")
 
